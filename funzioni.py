@@ -690,12 +690,24 @@ def baseline_degenere(etichette):
 
 
 def metriche(vere, previste, nomi=None):
-    """Accuratezza, macro-F1, report e matrice di confusione."""
-    from sklearn.metrics import (accuracy_score, f1_score, classification_report,
-                                 confusion_matrix)
+    """
+    Le quattro grandezze della Tabella 6 del paper (richiamo, precisione, F1 e
+    accuratezza), piu il report per classe e la matrice di confusione.
+
+    Richiamo, precisione e F1 sono medie macro, cioe la media semplice fra le tre
+    classi. Il paper non dichiara quale media usi; la macro e quella che non
+    privilegia la classe piu numerosa.
+    """
+    from sklearn.metrics import (accuracy_score, precision_recall_fscore_support,
+                                 classification_report, confusion_matrix)
     nomi = nomi if nomi is not None else config.NOMI_CLASSI
+    precisione, richiamo, f1, _ = precision_recall_fscore_support(
+        vere, previste, average='macro', zero_division=0)
     return {'accuratezza': float(accuracy_score(vere, previste)),
-            'macro_f1': float(f1_score(vere, previste, average='macro', zero_division=0)),
+            'richiamo': float(richiamo),
+            'precisione': float(precisione),
+            'f1': float(f1),
+            'macro_f1': float(f1),
             'report': classification_report(vere, previste, target_names=nomi,
                                             digits=3, zero_division=0),
             'confusione': confusion_matrix(vere, previste, labels=range(len(nomi))),
