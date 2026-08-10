@@ -108,13 +108,20 @@ ANAGRAFICA = {
 
 PAPER_RESIDUO = {'normale': 0.104, 'esterno': 0.386, 'interno': 0.479}
 
-PAPER_ACCURATEZZA = {
-    'DAE + residuo + CNN': 99.60,
-    'segnale grezzo + CNN': 61.06,
-    'residuo + feature + SVM': 41.67,
-    'residuo + feature + RF': 53.06,
-    'residuo + feature + KNN': 47.08,
+# Tabella 6 del paper, per intero: richiamo, precisione, F1 e accuratezza.
+PAPER_TABELLA6 = {
+    'DAE + residuo + CNN': {'richiamo': 0.99, 'precisione': 0.99, 'f1': 0.99, 'accuratezza': 99.60},
+    'segnale grezzo + CNN': {'richiamo': 0.60, 'precisione': 0.59, 'f1': 0.60, 'accuratezza': 61.06},
+    'residuo + feature + SVM': {'richiamo': 0.42, 'precisione': 0.41, 'f1': 0.41, 'accuratezza': 41.67},
+    'residuo + feature + RF': {'richiamo': 0.53, 'precisione': 0.52, 'f1': 0.52, 'accuratezza': 53.06},
+    'residuo + feature + KNN': {'richiamo': 0.47, 'precisione': 0.49, 'f1': 0.44, 'accuratezza': 47.08},
 }
+
+PAPER_ACCURATEZZA = {m: v['accuratezza'] for m, v in PAPER_TABELLA6.items()}
+
+# Matrice di confusione della Figura 9b: 238 segmenti di verifica e un solo errore,
+# da cui l'accuratezza dichiarata di 0,9958.
+PAPER_CONFUSIONE = [[78, 0, 0], [0, 87, 1], [0, 0, 72]]
 
 PAPER_SEGMENTI_DICHIARATI = 1320
 
@@ -122,6 +129,80 @@ PAPER_SEGMENTI_DICHIARATI = 1320
 LAMBDA_SELU = 1.0507009873554805
 ALPHA_SELU = 1.6732632423543772
 PAVIMENTO_SELU = -LAMBDA_SELU * ALPHA_SELU     # ~ -1.7581
+
+# ---------------------------------------------------------------------------
+# Dataset esteso (fase 2): tutti i cuscinetti, tutti i regimi
+# ---------------------------------------------------------------------------
+
+# I tre KB restano fuori: hanno danni su entrambi gli anelli e non ricadono
+# in modo univoco in nessuna delle tre classi.
+CUSCINETTI_KB = ['KB23', 'KB24', 'KB27']
+
+ARTIFICIALI = {
+    1: ['KA01', 'KA03', 'KA05', 'KA06', 'KA07', 'KA08', 'KA09'],   # pista esterna
+    2: ['KI01', 'KI03', 'KI05', 'KI07', 'KI08'],                   # pista interna
+}
+
+REALI = {1: CUSCINETTI_PER_CLASSE[1], 2: CUSCINETTI_PER_CLASSE[2]}
+
+CUSCINETTI_ESTESO = (CUSCINETTI_PER_CLASSE[0]
+                     + ARTIFICIALI[1] + REALI[1]
+                     + ARTIFICIALI[2] + REALI[2])
+
+CLASSE_DI_ESTESO = {b: c for c in (0, 1, 2)
+                    for b in (CUSCINETTI_PER_CLASSE[0] if c == 0
+                              else ARTIFICIALI[c] + REALI[c])}
+
+NATURA_DI = {b: ('sano' if b in CUSCINETTI_PER_CLASSE[0]
+                 else 'artificiale' if b in ARTIFICIALI[1] + ARTIFICIALI[2]
+                 else 'reale')
+             for b in CUSCINETTI_ESTESO}
+
+# Estensione del danno secondo la norma VDI 3832, dalle schede: il livello 1 ha
+# area fra 0,81 e 2 mm quadri, il livello 2 fra 2,2 e 9. I due gruppi non si
+# sovrappongono e la ripartizione fra i dodici artificiali e di sei e sei.
+ESTENSIONE = {
+    1: ['KA01', 'KA05', 'KA07', 'KI01', 'KI03', 'KI05'],
+    2: ['KA03', 'KA06', 'KA08', 'KA09', 'KI07', 'KI08'],
+}
+
+# Segmentazione angolare del dataset esteso: ogni giro viene portato alla
+# lunghezza del giro piu lungo presente (quello a 900 rpm), cosi si sovracampiona
+# soltanto e non si introduce aliasing. Il blocco dato alla CNN e di 14 giri.
+LUNGHEZZA_GIRO = 4273
+GIRI_PER_BLOCCO = 14
+
+# Assegnazione dei cuscinetti agli insiemi, per i sei esperimenti della fase 2.
+# Nessun cuscinetto compare in due insiemi dello stesso esperimento.
+INSIEMI = {
+    'soli_reali': {
+        'train': ['K001', 'K002', 'K003', 'K004', 'KA04', 'KA15', 'KA16',
+                  'KI04', 'KI14', 'KI16', 'KI17'],
+        'val': ['K005', 'KA22', 'KI18'],
+        'test': ['K006', 'KA30', 'KI21'],
+    },
+    'artificiale_verso_reale': {
+        'train': ['K001', 'K002', 'K003', 'K004',
+                  'KA01', 'KA03', 'KA06', 'KA07', 'KA08', 'KA09',
+                  'KI01', 'KI03', 'KI07', 'KI08'],
+        'val': ['K005', 'KA05', 'KI05'],
+        'test': ['K006'] + REALI[1] + REALI[2],
+    },
+    'severita': {
+        # addestramento sui danni estesi, verifica su quelli incipienti.
+        # I soli due interni di livello 2 restano entrambi in addestramento:
+        # toglierne uno per la validazione ne lascerebbe uno solo, quindi le
+        # epoche vengono fissate a quelle trovate nell'esperimento precedente.
+        'train': ['K001', 'K002', 'K003', 'K004'] + ESTENSIONE[2],
+        'val': [],
+        'test': ['K006'] + ESTENSIONE[1],
+    },
+}
+
+# Ore di funzionamento precedenti alle misure, per i sei sani (dalle schede).
+# Servono all'esperimento sul rodaggio: due definizioni di "normale" a confronto.
+SANI_ETEROGENEI = ['K003', 'K002', 'K001']      # 1, 19, oltre 50 ore
+SANI_POCO_RODATI = ['K003', 'K004', 'K005']     # 1, 5, 10 ore
 
 # percorsi
 
@@ -139,6 +220,7 @@ def percorsi(radice=RADICE, sottocartella=None):
         'radice': radice,
         'raw': os.path.join(radice, 'raw'),                 # archivi .rar originali
         'documenti': os.path.join(radice, 'documenti'),     # schede PDF dei cuscinetti
+        'dataset': os.path.join(radice, 'dataset_esteso'),  # dataset costruito una volta sola
         'estratti': '/content/estratti',                    # disco locale di Colab
     }
     base = os.path.join(radice, 'risultati')
@@ -147,7 +229,9 @@ def percorsi(radice=RADICE, sottocartella=None):
     p['risultati'] = base
     p['figure'] = os.path.join(base, 'figure')
     p['tabelle'] = os.path.join(base, 'tabelle')
+    p['modelli'] = os.path.join(base, 'modelli')
 
-    for chiave in ['raw', 'documenti', 'estratti', 'risultati', 'figure', 'tabelle']:
+    for chiave in ['raw', 'documenti', 'dataset', 'estratti',
+                   'risultati', 'figure', 'tabelle', 'modelli']:
         os.makedirs(p[chiave], exist_ok=True)
     return p
