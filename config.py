@@ -172,37 +172,100 @@ ESTENSIONE = {
 LUNGHEZZA_GIRO = 4273
 GIRI_PER_BLOCCO = 14
 
-# Assegnazione dei cuscinetti agli insiemi, per i sei esperimenti della fase 2.
-# Nessun cuscinetto compare in due insiemi dello stesso esperimento.
-INSIEMI = {
-    'soli_reali': {
-        'train': ['K001', 'K002', 'K003', 'K004', 'KA04', 'KA15', 'KA16',
-                  'KI04', 'KI14', 'KI16', 'KI17'],
-        'val': ['K005', 'KA22', 'KI18'],
-        'test': ['K006', 'KA30', 'KI21'],
-    },
-    'artificiale_verso_reale': {
-        'train': ['K001', 'K002', 'K003', 'K004',
-                  'KA01', 'KA03', 'KA06', 'KA07', 'KA08', 'KA09',
-                  'KI01', 'KI03', 'KI07', 'KI08'],
-        'val': ['K005', 'KA05', 'KI05'],
-        'test': ['K006'] + REALI[1] + REALI[2],
-    },
-    'severita': {
-        # addestramento sui danni estesi, verifica su quelli incipienti.
-        # I soli due interni di livello 2 restano entrambi in addestramento:
-        # toglierne uno per la validazione ne lascerebbe uno solo, quindi le
-        # epoche vengono fissate a quelle trovate nell'esperimento precedente.
-        'train': ['K001', 'K002', 'K003', 'K004'] + ESTENSIONE[2],
-        'val': [],
-        'test': ['K006'] + ESTENSIONE[1],
-    },
-}
+# ---------------------------------------------------------------------------
+# Assegnazione dei cuscinetti sani
+# ---------------------------------------------------------------------------
+#
+# I due modelli sono in cascata, e questo vincola la divisione. Un cuscinetto sano
+# usato per addestrare l'autoencoder produce un residuo sistematicamente piu basso,
+# perche il modello ne ha imparato le particolarita. Se la rete convolutiva vedesse
+# come "normali" soltanto residui cosi ottimistici, metterebbe la soglia troppo in
+# basso e segnalerebbe come guasto il primo cuscinetto integro mai visto.
+#
+# Per questo l'autoencoder ne usa tre e non quattro: K005 resta completamente
+# estraneo al suo addestramento e serve da normale di validazione per il
+# classificatore. K006 non viene mai aperto fino alla verifica finale.
+#
+#   K003 (1 h), K002 (19 h), K001 (>50 h)  addestramento dell'autoencoder
+#   K004 (5 h)                             arresto anticipato dell'autoencoder
+#   K005 (10 h)                            normale di validazione della CNN
+#   K006 (16 h)                            riservato alla verifica finale
 
-# Ore di funzionamento precedenti alle misure, per i sei sani (dalle schede).
-# Servono all'esperimento sul rodaggio: due definizioni di "normale" a confronto.
+SANI_DAE_TRAIN = ['K001', 'K002', 'K003']
+SANI_DAE_VAL = ['K004']
+SANI_CNN_TRAIN = ['K001', 'K002', 'K003', 'K004']
+SANI_CNN_VAL = ['K005']
+SANI_TEST = ['K006']
+
+# Ore di funzionamento precedenti alle misure, dalle schede. Servono
+# all'esperimento sul rodaggio, che confronta due definizioni di "normale".
+ORE_RODAGGIO = {'K001': 50.0, 'K002': 19.0, 'K003': 1.0,
+                'K004': 5.0, 'K005': 10.0, 'K006': 16.0}
 SANI_ETEROGENEI = ['K003', 'K002', 'K001']      # 1, 19, oltre 50 ore
 SANI_POCO_RODATI = ['K003', 'K004', 'K005']     # 1, 5, 10 ore
+
+# ---------------------------------------------------------------------------
+# Gli esperimenti della fase 2
+# ---------------------------------------------------------------------------
+#
+# 'dae_train' e 'dae_val' riguardano l'autoencoder, che vede solo cuscinetti sani.
+# 'train', 'val' e 'test' riguardano la rete convolutiva.
+# Nessun cuscinetto compare in due insiemi dello stesso esperimento.
+#
+# Per l'esperimento sui soli danni reali i piani fissano soltanto i conteggi
+# (tre esterni e quattro interni in addestramento, uno e uno in validazione, uno e
+# uno in verifica) e non quali esemplari. La scelta e fatta con un sorteggio a seme
+# fisso, dichiarato qui sotto, per non poterla accusare di essere stata aggiustata.
+# I tre esemplari particolari - KI04 e KI14, che hanno danni su entrambi gli anelli,
+# e KA22, unico reale dello stesso costruttore dei sani - non hanno bisogno di una
+# collocazione speciale qui, perche nell'esperimento artificiale-verso-reale
+# finiscono tutti in verifica ed e li che le previsioni su di loro si controllano.
+
+SEME_ASSEGNAZIONE = 0
+
+
+def _sorteggia_reali(seme=SEME_ASSEGNAZIONE):
+    """Divide i reali in 3+1+1 esterni e 4+1+1 interni, con seme fisso."""
+    import random
+    esiti = {}
+    for classe, quote in [(1, (3, 1, 1)), (2, (4, 1, 1))]:
+        elenco = sorted(REALI[classe])
+        random.Random(seme + classe).shuffle(elenco)
+        n_tr, n_val, _ = quote
+        esiti[classe] = (elenco[:n_tr],
+                         elenco[n_tr:n_tr + n_val],
+                         elenco[n_tr + n_val:])
+    return esiti
+
+
+_reali = _sorteggia_reali()
+
+INSIEMI = {
+    'soli_reali': {
+        'dae_train': SANI_DAE_TRAIN, 'dae_val': SANI_DAE_VAL,
+        'train': SANI_CNN_TRAIN + _reali[1][0] + _reali[2][0],
+        'val': SANI_CNN_VAL + _reali[1][1] + _reali[2][1],
+        'test': SANI_TEST + _reali[1][2] + _reali[2][2],
+    },
+    'artificiale_verso_reale': {
+        'dae_train': SANI_DAE_TRAIN, 'dae_val': SANI_DAE_VAL,
+        'train': SANI_CNN_TRAIN + ['KA01', 'KA03', 'KA06', 'KA07', 'KA08', 'KA09',
+                                   'KI01', 'KI03', 'KI07', 'KI08'],
+        'val': SANI_CNN_VAL + ['KA05', 'KI05'],
+        'test': SANI_TEST + REALI[1] + REALI[2],
+    },
+    'severita': {
+        # Addestramento sui danni estesi, verifica su quelli incipienti. I soli due
+        # interni di livello 2 restano entrambi in addestramento: toglierne uno per
+        # la validazione ne lascerebbe uno solo, e il modello imparerebbe quello.
+        # Le epoche vengono percio fissate a quelle trovate nell'esperimento
+        # precedente, invece di usare l'arresto anticipato.
+        'dae_train': SANI_DAE_TRAIN, 'dae_val': SANI_DAE_VAL,
+        'train': SANI_CNN_TRAIN + ESTENSIONE[2],
+        'val': [],
+        'test': SANI_TEST + ESTENSIONE[1],
+    },
+}
 
 # percorsi
 
