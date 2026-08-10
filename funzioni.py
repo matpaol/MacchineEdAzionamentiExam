@@ -78,7 +78,7 @@ def estrai_schede(cuscinetti, cartella_raw, cartella_documenti):
             for n in cuscinetti if os.path.isdir(os.path.join(cartella_documenti, n))}
 
 
-# usata in: 01, 02, 06
+# usata in: 01, 02, 03, 06
 def estrai_misure(cuscinetti, cartella_raw, cartella_estratti):
     """Scompatta i .mat dei cuscinetti indicati. Salta quelli già estratti."""
     for nome in cuscinetti:
@@ -202,7 +202,7 @@ def elenco_registrazioni(cuscinetti, cartella_estratti, regimi=None):
     return trovati
 
 
-# usata in: 02, 06
+# usata in: 02, 03, 06
 def inventario(cuscinetti, cartella_estratti, regimi=None,
                canale=config.CANALE_CORRENTE, classe_di=None):
     """
@@ -223,7 +223,7 @@ def inventario(cuscinetti, cartella_estratti, regimi=None,
     return pd.DataFrame(righe)
 
 
-# usata in: —
+# usata in: nessun notebook
 def trova_duplicati(inv, canale=config.CANALE_CORRENTE):
     """
     Cerca registrazioni con contenuto identico confrontando l'hash del segnale.
@@ -292,7 +292,7 @@ def stazionarieta(velocita):
 
 # segmentazione (equazioni 7-9 del paper)
 
-# usata in: 01, 02, 06
+# usata in: 01, 02, 03, 06
 def lunghezza_frame(rpm, fs=config.FS_ATTESO):
     """
     Campioni contenuti in un giro meccanico.
@@ -302,7 +302,7 @@ def lunghezza_frame(rpm, fs=config.FS_ATTESO):
     return int(round(fs / (rpm / 60.0)))
 
 
-# usata in: 02, 06
+# usata in: 02, 03, 06
 def costruisci_segmenti(inv, canale=config.CANALE_CORRENTE,
                         lunghezza_segmento=config.FS_ATTESO,
                         segmenti_per_registrazione=4, passo_secondi=None):
@@ -354,13 +354,13 @@ def frequenze_guasto(f_rotazione, n=config.N_SFERE, d=config.DIAMETRO_SFERA_MM,
 DIMENSIONI_DAE = [2560, 1280, 640, 320, 128, 32, 128, 320, 640, 1280, 2560]
 
 
-# usata in: 02, 06
+# usata in: 02, 03, 06
 def dispositivo():
     import torch
     return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-# usata in: 02
+# usata in: 02, 03
 def conta_parametri(modello):
     return sum(p.numel() for p in modello.parameters())
 
@@ -424,7 +424,7 @@ def crea_cnn(lunghezza, n_classi=3, nucleo=3):
     return CNN()
 
 
-# usata in: 02
+# usata in: 02, 03
 def addestra_dae(frame_train, frame_val, uscita_selu=True, dimensioni=None,
                  epoche=500, lotto=256, passo=3e-4, weight_decay=0.0,
                  pazienza=None, seme=0, dev=None, stampa_ogni=50, etichetta=''):
@@ -501,7 +501,7 @@ def addestra_dae(frame_train, frame_val, uscita_selu=True, dimensioni=None,
     return modello, curva_train, curva_val
 
 
-# usata in: 02, 06
+# usata in: 02, 03, 06
 def calcola_residui(modello, frame, lotto=256, dev=None):
     """Residuo r = x - x_ricostruito, campione per campione, su tutti i frame."""
     import torch
@@ -516,7 +516,7 @@ def calcola_residui(modello, frame, lotto=256, dev=None):
     return residui
 
 
-# usata in: 02, 06
+# usata in: 02, 03, 06
 def mse_per_frame(residui):
     return np.mean(np.asarray(residui, dtype=np.float64) ** 2, axis=1)
 
@@ -700,7 +700,7 @@ def metriche(vere, previste, nomi=None):
             'degenere': baseline_degenere(vere)}
 
 
-# usata in: —
+# usata in: nessun notebook
 def rapporti_residuo(mse, classi, nomi=None):
     """
     Residuo medio per classe e rapporto rispetto alla classe normale,
@@ -717,7 +717,7 @@ def rapporti_residuo(mse, classi, nomi=None):
     return t
 
 
-# usata in: —
+# usata in: 03
 def auc_residuo(mse_segmento, classi):
     """
     AUC ottenuta usando il solo MSE del residuo come punteggio, per ciascuna
@@ -737,7 +737,7 @@ def auc_residuo(mse_segmento, classi):
 
 # preparazione del segnale e lettura per esemplare (indagine, fase 1)
 
-# usata in: 03, 05
+# usata in: 03
 def scala_globale(frame_sani, bersaglio=1.5):
     """
     Costante unica che porta il segnale dentro il campo della SELU.
@@ -755,7 +755,7 @@ def scala_globale(frame_sani, bersaglio=1.5):
     return bersaglio / massimo, massimo
 
 
-# usata in: 03, 05
+# usata in: 03
 def residuo_per_cuscinetto(mse, cuscinetti, classi=None, nomi=None):
     """
     Residuo di ogni singolo esemplare, invece della media per classe.
@@ -790,7 +790,7 @@ def residuo_per_cuscinetto(mse, cuscinetti, classi=None, nomi=None):
 
 # segmentazione angolare e blocchi (dataset esteso, fase 2)
 
-# usata in: 04
+# usata in: 04 (04 e 05 ancora da scrivere)
 def campioni_per_giro(rpm, fs=config.FS_ATTESO):
     """Campioni contenuti in un giro dell'albero, alla velocita misurata."""
     if rpm <= 0:
@@ -798,7 +798,7 @@ def campioni_per_giro(rpm, fs=config.FS_ATTESO):
     return int(round(fs / (rpm / 60.0)))
 
 
-# usata in: 04
+# usata in: 04 (04 e 05 ancora da scrivere)
 def taglia_in_giri(segnale, campioni_giro):
     """Divide un segnale in giri consecutivi; la coda incompleta viene scartata."""
     x = np.asarray(segnale).ravel()
@@ -808,7 +808,7 @@ def taglia_in_giri(segnale, campioni_giro):
     return x[:quanti * campioni_giro].reshape(quanti, campioni_giro)
 
 
-# usata in: 04
+# usata in: 04 (04 e 05 ancora da scrivere)
 def porta_a_lunghezza(giri, lunghezza=config.LUNGHEZZA_GIRO):
     """
     Porta tutti i giri alla stessa lunghezza con il ricampionamento di Fourier.
@@ -820,7 +820,7 @@ def porta_a_lunghezza(giri, lunghezza=config.LUNGHEZZA_GIRO):
     return resample(np.asarray(giri, dtype=np.float64), lunghezza, axis=1)
 
 
-# usata in: 05
+# usata in: 05 (04 e 05 ancora da scrivere)
 def costruisci_blocchi(anagrafica, giri_per_blocco=config.GIRI_PER_BLOCCO):
     """
     Raggruppa giri consecutivi della stessa registrazione in blocchi.
@@ -848,7 +848,7 @@ def costruisci_blocchi(anagrafica, giri_per_blocco=config.GIRI_PER_BLOCCO):
     return np.asarray(indici), pd.DataFrame(righe)
 
 
-# usata in: 05
+# usata in: 05 (04 e 05 ancora da scrivere)
 def residui_a_blocchi(modello, X, indici_blocchi, lotto=16, dev=None):
     """
     Residuo di ogni blocco, ottenuto passando i suoi giri nel DAE e concatenandoli.
@@ -873,7 +873,7 @@ def residui_a_blocchi(modello, X, indici_blocchi, lotto=16, dev=None):
     return uscita
 
 
-# usata in: 05
+# usata in: 05 (04 e 05 ancora da scrivere)
 def conteggio_tre_livelli(previsioni, anagrafica_blocchi):
     """
     Accuratezza contata su tre unita diverse a partire dalle stesse previsioni:
@@ -918,7 +918,7 @@ def conteggio_tre_livelli(previsioni, anagrafica_blocchi):
 
 # utilità per figure e tabelle
 
-# usata in: 01, 02, 06
+# usata in: 01, 02, 03, 06
 def stile_grafici():
     """Impostazioni comuni alle figure. Da chiamare una volta per notebook."""
     import matplotlib.pyplot as plt
@@ -936,7 +936,7 @@ COLORI = {'normale': '#8aa8cc', 'esterno': '#e2a45f', 'interno': '#b08bbf',
           'scuro': '#33475b', 'neutro': '#9aa7b4'}
 
 
-# usata in: 01, 02
+# usata in: 01, 02, 03
 def salva_figura(fig, nome, cartella_figure):
     """
     Salva la figura in PNG senza canale alpha: il PDF/A della tesi non ammette
@@ -949,7 +949,7 @@ def salva_figura(fig, nome, cartella_figure):
     return percorso
 
 
-# usata in: 01, 02, 06
+# usata in: 01, 02, 03, 06
 def salva_tabella(df, nome, cartella_tabelle, indice=False):
     """Salva un DataFrame come CSV e ne stampa il percorso."""
     os.makedirs(cartella_tabelle, exist_ok=True)
