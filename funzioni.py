@@ -831,9 +831,14 @@ def costruisci_blocchi(anagrafica, giri_per_blocco=config.GIRI_PER_BLOCCO):
 
     Restituisce (indici, anagrafica_blocchi), dove indici ha una riga per blocco
     con le posizioni dei suoi giri dentro la matrice dei frame.
+
+    L'anagrafica va filtrata dal chiamante (per cuscinetto, per regime) senza
+    reimpostare l'indice: le posizioni originali sono quelle delle righe nella
+    matrice dei frame, e servono per andarle a leggere.
     """
     indici, righe = [], []
     for registrazione, gruppo in anagrafica.groupby('registrazione', sort=False):
+        gruppo = gruppo.sort_values('giro')
         posizioni = gruppo.index.to_numpy()
         quanti = len(posizioni) // giri_per_blocco
         for k in range(quanti):
@@ -874,6 +879,100 @@ def residui_a_blocchi(modello, X, indici_blocchi, lotto=16, dev=None):
 
 
 # usata in: 05 (04 e 05 ancora da scrivere)
+def addestra_cnn_insiemi(dati_train, etichette_train, dati_val, etichette_val,
+                         epoche=500, lotto=64, passo=3e-4, pazienza=20,
+                         seme=0, dev=None, stampa_ogni=10, etichetta=''):
+    """
+    Addestra la CNN con insiemi di addestramento e validazione gia separati.
+
+    Differisce da addestra_cnn, che divide un insieme unico per indici: qui i due
+    insiemi vengono da cuscinetti diversi, che e il protocollo della fase 2.
+    Con pazienza indicata ci si ferma quando la validazione smette di migliorare e
+    si ripristinano i pesi dell'epoca migliore.
+
+    Restituisce (modello, storia).
+    """
+    import copy
+    import torch
+    import torch.nn as nn
+    dev = dev if dev is not None else dispositivo()
+    torch.manual_seed(seme)
+    modello = crea_cnn(dati_train.shape[1]).to(dev)
+    ottimizzatore = torch.optim.Adam(modello.parameters(), lr=passo)
+    costo = nn.CrossEntropyLoss()
+
+    y_train = torch.as_tensor(np.asarray(etichette_train, dtype=np.int64))
+    y_val = torch.as_tensor(np.asarray(etichette_val, dtype=np.int64))
+    print(f'{etichetta} | parametri {conta_parametri(modello):,d}'
+          f' | {conta_parametri(modello) / len(dati_train):.0f} per blocco di addestramento')
+
+    def passa(dati, y, ottimizzatore=None):
+        addestra = ottimizzatore is not None
+        modello.train() if addestra else modello.eval()
+        ordine = (torch.randperm(len(dati)) if addestra else torch.arange(len(dati)))
+        somma, giusti = 0.0, 0
+        with torch.set_grad_enabled(addestra):
+            for i in range(0, len(ordine), lotto):
+                scelta = ordine[i:i + lotto].numpy()
+                xb = torch.from_numpy(np.asarray(dati[scelta], dtype=np.float32)).to(dev)
+                yb = y[scelta].to(dev)
+                uscita = modello(xb)
+                errore = costo(uscita, yb)
+                if addestra:
+                    ottimizzatore.zero_grad()
+                    errore.backward()
+                    ottimizzatore.step()
+                somma += errore.item() * len(scelta)
+                giusti += int((uscita.argmax(1) == yb).sum())
+        return somma / len(dati), giusti / len(dati)
+
+    storia = {'costo': [], 'accuratezza': [], 'costo_val': [], 'accuratezza_val': []}
+    migliore, pesi_migliori, attesa = float('inf'), None, 0
+    inizio = time.time()
+    for epoca in range(1, epoche + 1):
+        c_tr, a_tr = passa(dati_train, y_train, ottimizzatore)
+        c_val, a_val = passa(dati_val, y_val)
+        storia['costo'].append(c_tr); storia['accuratezza'].append(a_tr)
+        storia['costo_val'].append(c_val); storia['accuratezza_val'].append(a_val)
+        if epoca == 1 or epoca % stampa_ogni == 0:
+            print(f'   epoca {epoca:4d} | costo {c_tr:.5f} acc {a_tr:.4f}'
+                  f' | validazione {c_val:.5f} acc {a_val:.4f}')
+        if pazienza is not None:
+            if c_val < migliore:
+                migliore, attesa = c_val, 0
+                pesi_migliori = copy.deepcopy(modello.state_dict())
+            else:
+                attesa += 1
+                if attesa >= pazienza:
+                    print(f'   arresto all epoca {epoca}: la validazione non migliora'
+                          f' da {pazienza} epoche')
+                    break
+    if pesi_migliori is not None:
+        modello.load_state_dict(pesi_migliori)
+
+    storia['epoche'] = len(storia['costo'])
+    storia['epoca_minimo'] = int(np.argmin(storia['costo_val'])) + 1
+    storia['durata_s'] = time.time() - inizio
+    print(f'   epoche {storia["epoche"]} | minimo all epoca {storia["epoca_minimo"]}'
+          f' | durata {storia["durata_s"] / 60:.1f} min')
+    return modello, storia
+
+
+# usata in: 05 (04 e 05 ancora da scrivere)
+def prevedi_cnn(modello, dati, lotto=64, dev=None):
+    """Classe prevista per ogni blocco."""
+    import torch
+    dev = dev if dev is not None else dispositivo()
+    modello.eval()
+    fuori = []
+    with torch.no_grad():
+        for i in range(0, len(dati), lotto):
+            xb = torch.from_numpy(np.asarray(dati[i:i + lotto], dtype=np.float32)).to(dev)
+            fuori.append(modello(xb).argmax(1).cpu().numpy())
+    return np.concatenate(fuori)
+
+
+# usata in: 05 (04 e 05 ancora da scrivere)
 def conteggio_tre_livelli(previsioni, anagrafica_blocchi):
     """
     Accuratezza contata su tre unita diverse a partire dalle stesse previsioni:
@@ -888,19 +987,20 @@ def conteggio_tre_livelli(previsioni, anagrafica_blocchi):
     t = anagrafica_blocchi.copy()
     t['previsione'] = np.asarray(previsioni)
 
-    def maggioranza(gruppo):
-        return gruppo['previsione'].mode().iloc[0]
+    def per_unita(colonna):
+        """Vera e prevista per ogni valore della colonna, la seconda a maggioranza."""
+        righe = []
+        for valore, gruppo in t.groupby(colonna, sort=True):
+            conteggio = gruppo['previsione'].value_counts()
+            righe.append({colonna: valore,
+                          'vera': int(gruppo['classe'].iloc[0]),
+                          'prevista': int(conteggio.index[0]),
+                          'blocchi': int(len(gruppo)),
+                          'quota_voto': float(conteggio.iloc[0] / len(gruppo))})
+        return pd.DataFrame(righe)
 
-    per_registrazione = (t.groupby('registrazione')
-                          .apply(lambda g: pd.Series({'vera': g['classe'].iloc[0],
-                                                      'prevista': maggioranza(g)}),
-                                 include_groups=False)
-                          .reset_index())
-    per_cuscinetto = (t.groupby('cuscinetto')
-                       .apply(lambda g: pd.Series({'vera': g['classe'].iloc[0],
-                                                   'prevista': maggioranza(g)}),
-                              include_groups=False)
-                       .reset_index())
+    per_registrazione = per_unita('registrazione')
+    per_cuscinetto = per_unita('cuscinetto')
 
     return {
         'blocchi': {'giusti': int((t['previsione'] == t['classe']).sum()),
